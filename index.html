@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>lldb2wasm</title>
+  </head>
+  <p>
+Hit "New command" to enter new lldb command.<br><br>
+Examples:<br>
+(1) file /wasm_test_files/a.out<br>
+(2) target list<br>
+(3) image lookup -r -n .*<br>
+(4) image dump sections<br>
+(5) disassemble --start-address 0x00000000000005d5 --count 20<br>
+(6) b main<br>
+(7) br list<br>
+  </p>
+  <body>
+      <button id="command">New command</button>
+<p>
+(lldb) <span id="outputCommand"></span><br><br>
+<span id="outputData"></span>
+</p>
+    <script src="lldb.js"></script>
+    <script>
+      document.getElementById("command").onclick = function(){
+        var command = prompt("Enter lldb command");
+        console.log("After command enter js");
+        var result = Module.ccall('execute_command', 'string', ['string'], [command]);
+        console.log(result);
+        document.getElementById("outputCommand").innerText = command;
+        document.getElementById("outputData").innerText = result;
+      }
+    </script>
+  </body>
+</html>
