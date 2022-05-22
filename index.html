@@ -4,30 +4,144 @@
     <meta charset="utf-8">
     <title>lldb2wasm</title>
   </head>
+  <body>
   <p>
-Hit "New command" to enter new lldb command.<br><br>
+Press "Choose File" to load new executable.<br>
+Then hit "New Command" to enter new lldb command.<br><br>
+      <input type="file" id="file-selector"><br><br>
 Examples:<br>
-(1) file /wasm_test_files/a.out<br>
+(1) version<br>
 (2) target list<br>
 (3) image lookup -r -n .*<br>
 (4) image dump sections<br>
-(5) disassemble --start-address 0x00000000000005d5 --count 20<br>
-(6) b main<br>
-(7) br list<br>
+(5) disassemble --name entrypoint --count 20<br>
+(6) b entrypoint<br>
+(7) br list<br><br>
+Experimental:<br>
+(8) process connect --plugin gdb-remote javascript://<br>
+The packet exchange will be printed in the (gdb-remote) section below.
   </p>
-  <body>
-      <button id="command">New command</button>
+      <button id="command">New Command</button>
 <p>
 (lldb) <span id="outputCommand"></span><br><br>
-<span id="outputData"></span>
+<span id="outputData"></span><br><br>
+(gdb-remote) <span id="outputRemote"></span><br><br>
 </p>
     <script src="lldb.js"></script>
     <script>
+      var rbpf_buf;
+      var rbpf_buf_len = 0;
+      var lldb_buf;
+      //var lldb_buf_len = 0;
+      var call_count = 0;
+      var rbpf_reply = {
+          0: "+",
+          1: "$OK#9a",
+          2: "$PacketSize=1000;vContSupported+;multiprocess+;QStartNoAckMode+;swbreak+#22",
+          3: "$#00",
+          4: "$#00",
+          5: "$#00",
+          6: "$vCont;c;C;s;S#62",
+          7: "$#00",
+          8: "$#00",
+          9: "$#00",
+          10: "$#00",
+          11: "$mp01.01#cd",
+          12: "$l#6c",
+          13: "$S05#b8",
+          14: "$#00",
+          15: "$name:00;bitsize:64;offset:00;encoding:uint;format:hex;set:General Purpose Registers;gcc:00;dwarf:00;#ba",
+          16: "$name:01;bitsize:64;offset:08;encoding:uint;format:hex;set:General Purpose Registers;gcc:01;dwarf:01;#c5",
+          17: "$name:02;bitsize:64;offset:10;encoding:uint;format:hex;set:General Purpose Registers;gcc:02;dwarf:02;#c1",
+          18: "$name:03;bitsize:64;offset:18;encoding:uint;format:hex;set:General Purpose Registers;gcc:03;dwarf:03;#cc",
+          19: "$name:04;bitsize:64;offset:20;encoding:uint;format:hex;set:General Purpose Registers;gcc:04;dwarf:04;#c8",
+          20: "$name:05;bitsize:64;offset:28;encoding:uint;format:hex;set:General Purpose Registers;gcc:05;dwarf:05;#d3",
+          21: " $name:06;bitsize:64;offset:30;encoding:uint;format:hex;set:General Purpose Registers;gcc:06;dwarf:06;#cf",
+          22: "$name:07;bitsize:64;offset:38;encoding:uint;format:hex;set:General Purpose Registers;gcc:07;dwarf:07;#da",
+          23: "$name:08;bitsize:64;offset:40;encoding:uint;format:hex;set:General Purpose Registers;gcc:08;dwarf:08;#d6",
+          24: " $name:09;bitsize:64;offset:48;encoding:uint;format:hex;set:General Purpose Registers;gcc:09;dwarf:09;#e1",
+          25: "$name:r10;alt-name:sp;bitsize:64;offset:72;encoding:uint;format:hex;set:General Purpose Registers;gcc:10;dwarf:10;generic:sp;#d4",
+          26: "$name:r11;alt-name:pc;bitsize:64;offset:80;encoding:uint;format:hex;set:General Purpose Registers;gcc:11;dwarf:11;generic:pc;#b6",
+          27: "$E45#ae",
+          28: "$mp01.01#cd",
+          29: "$l#6c",
+          30: "$OK#9a",
+          31: "$0*,#86",
+          32: "$#00",
+          33: "$Text=00;Data=00;Bss=00#94",
+          34: "$#00",
+          35: "$#00",
+          36: "$mp01.01#cd",
+          37: "$l#6c",
+          38: "$mp01.01#cd",
+          39: "$l#6c",
+          40: "$e81b0*(#b2",
+          41: "$00100*!200*!#19",
+          42: "$#00",
+          43: "$#00",
+          44: "$#00",
+          45: "$0*~0*~0*~0*~0*~0*~0*~0*~0*~0*~0*H#12",
+      };
+
+      var lldb_reply = {};
+
+      function get_lldb_buf() {
+          //if (call_count <= 12)
+          lldb_buf = rbpf_reply['' + call_count];
+          buf_len = (rbpf_reply['' + call_count]).length;
+          console.log("call %d - len: %d reply: %s", call_count, buf_len, lldb_buf);
+          Module.ccall('get_rbpf_data', null, ['string', 'number'], [lldb_buf, buf_len]);
+          call_count += 1;
+          return buf_len;
+      }
+         const readFromBlobOrFile = (blob) => (
+         new Promise((resolve, reject) => {
+           const fileReader = new FileReader();
+           fileReader.onload = () => {
+             resolve(fileReader.result);
+           };
+           fileReader.onerror = ({ target: { error: { code } } }) => {
+             reject(Error(`File could not be read! Code=${code}`));
+           };
+           fileReader.readAsArrayBuffer(blob);
+         })
+       );
+       const create_target = async ({ target: { files } }) => {
+         const { name } = files[0];
+         console.log("Read file %s", name);
+         const data = await readFromBlobOrFile(files[0]);
+         Module.FS.writeFile(name, new Uint8Array(data));
+         var result = Module.ccall('execute_command', 'string', ['string'], ["file " + name]);
+        document.getElementById("outputCommand").innerText = "file " + name;
+        document.getElementById("outputData").innerText = result;
+       };
+       document.getElementById('file-selector').addEventListener('change', create_target);
+
+       document.getElementById("command").onclick = function(){
+          var command = prompt("Enter lldb command");
+          console.log("After command enter js");
+          var result = Module.ccall('execute_command', 'string', ['string'], [command]);
+          console.log(result);
+          document.getElementById("outputCommand").innerText = command;
+          document.getElementById("outputData").innerText = result;
+        }
+
       document.getElementById("command").onclick = function(){
         var command = prompt("Enter lldb command");
         console.log("After command enter js");
         var result = Module.ccall('execute_command', 'string', ['string'], [command]);
         console.log(result);
+        if (command.indexOf("process connect") !== -1) {
+            console.log("(gdb-remote) process connect finished");
+            var gdb_remote_exchange = "\nlldb         |          rbpf\n";
+            for (i=0; i<call_count; i++) {
+                gdb_remote_exchange += lldb_reply[''+i];
+                gdb_remote_exchange += " | ";
+                gdb_remote_exchange += rbpf_reply[''+i];
+                gdb_remote_exchange += "\n";
+            }
+            document.getElementById("outputRemote").innerText = gdb_remote_exchange;
+        }
         document.getElementById("outputCommand").innerText = command;
         document.getElementById("outputData").innerText = result;
       }
