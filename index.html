@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>lldb2wasm</title>
+  </head>
+  <body>
+  <p>
+Press "Choose File" to load new executable.<br>
+Then hit "New Command" to enter new lldb command.<br><br>
+      <input type="file" id="file-selector"><br><br>
+Compile a simple hello world C program hello.c:<br><br>
+#include &#60;stdio.h&#62;<br>
+<br>
+int main() { <br>
+	printf("Hello World\n"); <br>
+	return 0; <br>
+} <br><br>
+~: gcc -g hello.c -o hello.o <br> <br>
+
+Examples:<br>
+(0)   Load hello.o via the 'Choose File' button<br><br>
+Then enter commands via the 'New Command' button.<br>
+(1)   version<br>
+(2)   target list<br>
+(3)   image lookup -r -n .*<br>
+(4)   image dump sections<br>
+(5)   disassemble --name main --count 10<br>
+(6)   b main<br>
+(7)   br list<br>
+(8.1) Start a local server: lldb-server g :PORT_TCP hello.o<br>
+(8.2) Start websockify: websockify :PORT_WEBSOCKET :PORT_TCP<br>
+(8.3) gdb-remote PORT_WEBSOCKET<br>
+(9)   continue<br><br>
+
+Note: The browser console might have more nicely formatted output.<br><br>
+  </p>
+      <button id="command">New Command</button>
+<p>
+(lldb) <span id="outputCommand"></span><br><br>
+<span id="outputData"></span><br><br>
+</p>
+    <script src="lldb.js"></script>
+    <script>
+       const readFromBlobOrFile = (blob) => (
+         new Promise((resolve, reject) => {
+           const fileReader = new FileReader();
+           fileReader.onload = () => {
+             resolve(fileReader.result);
+           };
+           fileReader.onerror = ({ target: { error: { code } } }) => {
+             reject(Error(`File could not be read! Code=${code}`));
+           };
+           fileReader.readAsArrayBuffer(blob);
+         })
+       );
+       const create_target = async ({ target: { files } }) => {
+          const { name } = files[0];
+          console.log("Read file name: ", name);
+          const data = await readFromBlobOrFile(files[0]);
+          Module.FS.writeFile(name, new Uint8Array(data));
+          Module.ccall('create_target', null, ['string'], [name]);
+          document.getElementById("outputCommand").innerText = "file " + name;
+          document.getElementById("outputData").innerText = 'Target created successfully';
+       };
+       document.getElementById('file-selector').addEventListener('change', create_target);
+
+       document.getElementById("command").onclick = function(){
+          var command = prompt("Enter lldb command");
+          console.log("Command: ", command);
+          const strPtr = Module.ccall('execute_command', 'number', ['string'], [command]);
+          const result = Module.UTF8ToString(strPtr);
+          console.log("Output: ", result);
+          document.getElementById("outputCommand").innerText = command;
+          document.getElementById("outputData").innerText = result;
+          Module._free(strPtr);
+        }
+    </script>
+  </body>
+</html>
